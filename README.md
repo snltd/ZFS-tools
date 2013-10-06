@@ -1,4 +1,4 @@
-# zfs-tools
+# ZFS Tools
 
 Some tools I wrote (a few years ago now) to assist me in my
 day-to-day ZFS business. Probably mostly only of historical interest
@@ -10,7 +10,7 @@ derivatives. I've used them for years with no trouble. They will
 most likely work on ZFS equipped bedroom-hobbyist operating systems,
 but come with no guarantees.
 
-## `zfs_snapshot.sh`
+## zfs_snapshot.sh
 
 I run this from `cron`, and it takes automatic snapshots of my
 systems. Solaris has the `auto-snapshot` SMF service for this now,
@@ -60,7 +60,7 @@ From my own `crontab`.
 45 5 1 * * /usr/local/bin/zfs_snapshot.sh -t month -o "*patches,*build,*logs"
 ```    
 
-## `zfs_remove_snap.sh`
+## zfs_remove_snap.sh
 
 This script batch-removes ZFS snapshots. It takes the following
 options:
@@ -81,7 +81,7 @@ options:
   will print the `zfs` commands it would use, and exit.
 * `-h`: print usage and exit.
 
-## `zfs_real_usage.sh`
+## zfs_real_usage.sh
 
 The way ZFS reports space can be a little confusing. This script
 tells you what datasets and snapshots are taking up real-estate on
@@ -92,7 +92,7 @@ I've found this script useful when I need to clear some space, and
 some deeply buried snapshot somewhere is hogging a stack of room.
 
 
-## `zfs_scrub.sh`
+## zfs_scrub.sh
 
 This is a wrapper to `zfs scrub`, which I used to run monthly from
 `cron`. It scrubs every pool on the box sequentially, and when the
@@ -104,7 +104,7 @@ mails when the scrub finds errors.
 By default the script writes its actions to the `syslog`, via the
 `LOCAL7` facility.
 
-##` zfs_send_stream.sh`
+## zfs_send_stream.sh
 
 This was written in the days before Sun gave us recursive
 snapshotting and sending. I wrote it to do full transfers of pools,
