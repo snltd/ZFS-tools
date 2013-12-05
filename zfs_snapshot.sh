@@ -7,7 +7,7 @@
 #
 # Make a snapshot of every ZFS filesystem on the host. It overwrites
 # existing snapshots, and has a number of ways of running.
-#   
+#
 #   day - creates a snapshot named after the day of the week. So, if you run
 #         it every with "day" as the argument, you'll always have a week's
 #         worth of snaps.  If run with no argument, this is the default,
@@ -16,7 +16,7 @@
 #
 #  date - creates a snapshot named after today's date. Use this whenever. I
 #         find it's useful to run before a big change, or every monday, to
-#         keep snaps going back a long way. 
+#         keep snaps going back a long way.
 #
 # month - creates a snapshot named after the month. Run it on the first of
 #         month perhaps?
@@ -70,7 +70,7 @@
 MYVER=2.4
 	# Version number. PLEASE UPDATE!
 
-PATH=/usr/bin:/usr/sbin
+PATH=/bin:/usr/bin:/sbin:/usr/sbin
 	# Always set your PATH. You know where you are when you set your PATH
 
 typeset -l SNAPNAME
@@ -128,7 +128,7 @@ log()
     # $2 is the syslog level. If not supplied, defaults to info
 
 	typeset -u PREFIX
-	
+
 	PREFIX=${2:-info}
 
     is_cron \
@@ -148,12 +148,12 @@ usage()
 	  ${0##*/} -V
 	  ${0##*/} -h
 
-	where 
+	where
 	  zfs           : is any number of ZFS filesystems. If no arguments are
-	                  supplied, the script will snapshot all mounted ZFS 
+	                  supplied, the script will snapshot all mounted ZFS
 	                  filesystems
 	  dir           : is any number of directories
- 
+
 	options
 	  -d, --dir     : snapshot the filesystem containing the given directory
 	  -t, --type    : type of snapshot to do, determines snapshot name(s)
@@ -249,15 +249,15 @@ case $TYPE in
 
 	"now")	SNAPNAME=$(date "+%Y-%m-%d_%H:%M")
 			;;
-	
+
 	"time")	SNAPNAME=$(date "+%H:%M")
 			;;
-	
+
 esac
 
 [[ -z $SNAPNAME ]] && die "No snapshot type selected (use -t)"
 
-# Make a list, SNAPLIST, of ZFS filesystems the user wants us to snapshot. 
+# Make a list, SNAPLIST, of ZFS filesystems the user wants us to snapshot.
 
 if [[ -n $DIRS ]]
 then
@@ -287,16 +287,16 @@ then
 	# We've been given a list of ZFS filesystems to snap. Have we also been
 	# asked to recurse? awk filters out unmounted filesystems, which we
 	# don't want to snap
-	
+
 	if [[ -n $RECURSE ]]
 	then
 		SNAPLIST=$(for z in $@
 		do
 			zfs list -rH -t filesystem -o name,mountpoint $z
-		done | awk '{ 
+		done | awk '{
 
-			if ($2 != "none") 
-				print $1 
+			if ($2 != "none")
+				print $1
 
 			}' | sort -u)
 	else
@@ -308,17 +308,17 @@ else
 	SNAPLIST=$(zfs list -H -o name,mountpoint -t filesystem \
 	| sed '/none$/d;s/	.*//')
 fi
-	
+
 [[ -z $SNAPLIST ]] && die "no valid ZFS filesystems supplied"
 
 # Go through the snapshot list
 
-for fs in $SNAPLIST 
+for fs in $SNAPLIST
 do
 
 	if [[ -n $OMIT ]]
 	then
-			
+
 		# Just match this filesystem against everything in the list. I know
 		# this isn't very efficient coding, but it'll do for this purpose.
 		# The condition lets the user supply wildcards, so long as they are
@@ -344,7 +344,7 @@ do
 			&&  print "zfs destroy $SNAP" \
 			|| zfs destroy $SNAP
 	fi
-	
+
 	# Take a snapshot. ZFS is sweet.
 
 	if [[ -n $PRINT ]]
