@@ -1,0 +1,45 @@
+#!/usr/bin/ksh
+#
+# I have a machine with a flaky old motherboard which keeps
+# temporarily losing devices and confusing ZFS. The most common
+# manifestation of this is that my SSD cache  and log and devices
+# keep going UNAVAIL. This script restores them, or moves them to a
+# new device.
+# Set NEWDEV to move the cached to a different device. The script
+# does not do any partitioning for you.
+#
+NEWDEV="c6d0"
+
+if [[ $(id -u) != 0 ]]
+then
+    print "script must be run as root"
+    exit 1
+fi
+
+zpool list -Ho name | while read pool
+do
+    zpool status $pool | sed -n '/cache/{n;p;}' | read dev state junk
+
+    if [[ $state == UNAVAIL ]]
+    then
+        print "fixing device '$dev' in pool '$pool'"
+        zpool remove $pool $dev
+		[[ -n $NEWDEV ]] && dev="${NEWDEV}s${dev##*s}"
+        zpool add -f $pool cache $dev
+    else
+        print "pool '$pool' looks fine"
+    fi
+
+    zpool status $pool | sed -n '/logs/{n;p;}' | read dev state junk
+
+    if [[ $state == UNAVAIL ]]
+    then
+        print "fixing device '$dev' in pool '$pool'"
+        zpool remove $pool $dev
+		[[ -n $NEWDEV ]] && dev="${NEWDEV}s${dev##*s}"
+        zpool add -f $pool log $dev
+    else
+        print "pool '$pool' looks fine"
+    fi
+
+done
