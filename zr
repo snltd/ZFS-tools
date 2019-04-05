@@ -1,0 +1,191 @@
+#!/usr/bin/env ruby
+
+# Given a file as its only argument, finds files of that name in ZFS
+# snapshots, shows them to you, and lets you restore by selection.
+# Or, given the '-a' flag, automatically restores the most recently
+# modified with no interaction.
+# Selecting a number (1) copies the snapshot file over the existing one.
+# Selecting a number and 'k' (1k) renames the existing file
+# '<file>.orig' and copies the snapshot file in
+# Selecting a number and 'd' (1d) shows a diff of the two files,
+# with the snapshot file being < the first <
+
+require 'pathname'
+require 'fileutils'
+require 'optparse'
+
+# Colour stuff
+#
+class String
+  def bold
+    "\033[01m#{self}\033[0m"
+  end
+
+  def blue
+    "\033[34m#{self}\033[0m"
+  end
+
+  def strike
+    "\033[09m#{self}\033[0m"
+  end
+end
+
+def dataset_root(ref)
+  ref.mountpoint? ? ref : dataset_root(ref.parent)
+end
+
+def msg(str)
+  puts str if defined?(VERBOSE)
+end
+
+def usage_str
+  "usage: #{Pathname.new(__FILE__).basename} [options] <file>..."
+end
+
+# Safe ways of examining a file which may not exist
+#
+def mtime(file)
+  file.mtime
+rescue Errno::ENOENT
+  'unknown mtime'
+end
+
+def size(file)
+  file.size
+rescue Errno::ENOENT
+  'unknown size'
+end
+
+trap('INT') do
+  puts
+  exit 0
+end
+
+OptionParser.new do |o|
+  o.banner = usage_str
+
+  o.on('-a', '--auto', 'automatically recover the newest backup') do
+    AUTO = true
+  end
+
+  o.on('-v', '--verbose', 'be verbose') { VERBOSE = true }
+  o.on('-h', '--help', 'show this information') { abort o.to_s }
+end.parse!
+
+abort usage_str if ARGV.empty?
+
+ARGV.each do |file|
+  file = Pathname.new(file)
+
+  # The file might not exist outside of a snapshot (because you just
+  # unlinked it). Let's assume if the *parent directory* doesn't
+  # exist, that's user error. Running Pathname#realpath on something
+  # that doesn't exist throws an ENOENT.
+  #
+  begin
+    dir = file.dirname.realpath
+    file = dir + file.basename
+  rescue Errno::ENOENT
+    puts 'Parent directory of file was not found.'
+    next
+  end
+
+  dataset_root = dataset_root(file)
+  snapdir = dataset_root + '.zfs' + 'snapshot'
+
+  unless snapdir.exist?
+    puts "No snapshot dir. [#{snapdir}]."
+    next
+  end
+
+  candidates = snapdir.children.each_with_object([]) do |snap, a|
+    c = snap + file.sub(dataset_root.to_s + '/', '').to_s
+    msg "looking for #{c}"
+    a.<< [snap.basename.to_s, c] if c.exist?
+  end
+
+  if candidates.empty?
+    puts format('No snapshots of file. (Tried %<num>d snapshots.)',
+                 num: snapdir.children.size)
+    next
+  end
+
+  puts format('   %-20<current>s %-35<mtime>s %<size>s',
+              current: 'current file',
+              mtime: mtime(file),
+              size: size(file)).bold
+  78.times { print '-' }
+  puts
+
+  candidates.sort_by! { |c| c.last.mtime }.reverse!
+
+  identical = 0
+
+  candidates.each_with_index do |c, i|
+    str = format('%2<index>d %-20<snap_name>s %-35<mtime>s %<size>s',
+                 index: i,
+                 snap_name: c.first,
+                 mtime: c.last.mtime,
+                 size: c.last.size)
+
+    puts(if c.last.size == size(file) && c.last.mtime == mtime(file)
+           identical += 1
+           str.strike
+         elsif c.last.size == size(file)
+           str
+         else
+           str.blue
+         end)
+  end
+
+  if identical == candidates.size
+    puts 'Only identical files found.'
+    next
+  end
+
+  if defined?(AUTO)
+    src = candidates.first
+    cmd = ''
+  else
+    print "choose file to promote [add 'd' for diff, 'k' to keep] > "
+
+    begin
+      selection = STDIN.gets.chomp
+    rescue NoMethodError # probably ctrl-d
+      puts
+      next
+    end
+
+    next if selection.empty?
+
+    selection =~ /^(\d+)([a-z]?)$/
+    selection = Regexp.last_match(1)
+    cmd = Regexp.last_match(2)
+
+    unless selection.to_i.to_s == selection
+      puts 'Invalid selection.'
+      next
+    end
+
+    src = candidates[selection.to_i]
+
+    if src.nil?
+      puts 'Selection not found.'
+      next
+    end
+  end
+
+  if cmd.empty? || cmd == 'k'
+    puts "promoting #{src.last}"
+
+    file.rename(file.dirname + (file.basename.to_s + '.orig')) if cmd == 'k'
+
+    # Linux tries to be "clever" and thinks the snapshot file *is* the target
+    # file. So we force an unlink.
+
+    file.unlink if file.exist?
+    FileUtils.cp_r(src.last, file, preserve: true)
+  elsif cmd == 'd'
+    system("diff #{src.last} #{file}")
+  end
+end
