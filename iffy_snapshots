@@ -1,0 +1,17 @@
+#!/usr/bin/env ruby
+
+# Find snapshots which don't match an expected naming scheme
+#
+expected = %w[monday tuesday wednesday thursday friday saturday
+              sunday january february march april may june july
+              august september october november december]
+
+`/usr/sbin/zfs list -t snapshot -Ho name`.each_line do |snap|
+  dataset, snapshot = snap.strip.split('@')
+  next if snapshot == 'initial'
+  next if expected.include?(snapshot)
+  next if snap =~ /[012]\d:[0-5]0$/
+  next if dataset.start_with?('rpool/VARSHARE/zones')
+  next if dataset.start_with?('rpool/ROOT')
+  puts snap
+end
