@@ -1,24 +1,23 @@
 # ZFS Tools
 
-Some tools I wrote (a few years ago now) to assist me in my
-day-to-day ZFS business. Probably mostly only of historical interest
-now. (Though they are not very interesting.)
+Various tools which assist with day-to-day ZFS business. Most of
+these were written around 2007, and some of what they do (like
+recursive snapshot sending) is now built into the real ZFS tooling.
 
-They're all written in The One True Shell (`ksh`) and should run
-happily under `ksh` or `ksh93` on Solaris 10 or 11, or Illumos
-derivatives. I've used them for years with no trouble. They will
-most likely work on ZFS equipped bedroom-hobbyist operating systems,
-but come with no guarantees.
+## zr
 
-## zfs_snapshot.sh
+Provides a nice way of recovering or reverting individual files from
+snapshots.
+
+## zfs_snapshot
 
 I run this from `cron`, and it takes automatic snapshots of my
 systems. Solaris has the `auto-snapshot` SMF service for this now,
-but `zfs_snapshot.sh` predates that by several years and, IMO, is
+but `zfs_snapshot` predates that by several years and, IMO, is
 simpler to use.
 
-    zfs_snapshot.sh [-pr] [-t day|month|date|time|now] [-o ptn,ptn] zfs
-    zfs_snapshot.sh [-pr] [-t day|month|date|time|now] [-o ptn,ptn] -d dir
+    zfs_snapshot [-pr] [-t day|month|date|time|now] [-o ptn,ptn] zfs
+    zfs_snapshot [-pr] [-t day|month|date|time|now] [-o ptn,ptn] -d dir
 
 Options are as follows:
 
@@ -49,18 +48,18 @@ From my own `crontab`.
 ```
 # Snapshot ZFS filesystems every day
 #
-45 6 * * * /usr/local/bin/zfs_snapshot.sh -t day -o "*build,*logs"
+45 6 * * * /usr/local/bin/zfs_snapshot -t day -o "*build,*logs"
 
 # Snapshot home dirs twice an hour
 #
-0,30 * * * * /usr/local/bin/zfs_snapshot.sh -t time space/export/home
+0,30 * * * * /usr/local/bin/zfs_snapshot -t time space/export/home
 
 # Snapshot monthly
 #
-45 5 1 * * /usr/local/bin/zfs_snapshot.sh -t month -o "*patches,*build,*logs"
-```    
+45 5 1 * * /usr/local/bin/zfs_snapshot -t month -o "*patches,*build,*logs"
+```
 
-## zfs_remove_snap.sh
+## zfs_remove_snap
 
 This script batch-removes ZFS snapshots. It takes the following
 options:
@@ -81,7 +80,7 @@ options:
   will print the `zfs` commands it would use, and exit.
 * `-h`: print usage and exit.
 
-## zfs_real_usage.sh
+## zfs_real_usage
 
 The way ZFS reports space can be a little confusing. This script
 tells you what datasets and snapshots are taking up real-estate on
@@ -92,7 +91,7 @@ I've found this script useful when I need to clear some space, and
 some deeply buried snapshot somewhere is hogging a stack of room.
 
 
-## zfs_scrub.sh
+## zfs_scrub
 
 This is a wrapper to `zfs scrub`, which I used to run monthly from
 `cron`. It scrubs every pool on the box sequentially, and when the
@@ -104,7 +103,7 @@ mails when the scrub finds errors.
 By default the script writes its actions to the `syslog`, via the
 `LOCAL7` facility.
 
-## zfs_send_stream.sh
+## zfs_send_stream
 
 This was written in the days before Sun gave us recursive
 snapshotting and sending. I wrote it to do full transfers of pools,
@@ -113,7 +112,7 @@ including all their snapshots and attributes, between machines.
 It has two modes, which we'll call 'send' and 'restore'. Send mode
 is invoked like this:
 
-    zfs_send_stream.sh -s <remote_host> -p <remote_pool> <dataset>
+    zfs_send_stream -s <remote_host> -p <remote_pool> <dataset>
 
 * `-s user@host`: this is fed straight to `ssh -C`. It's your
   responsibility to set up the users at each end, and do any
@@ -127,7 +126,7 @@ is invoked like this:
 
 Restore mode is run *on the receiving host* like this:
 
-    zfs_send_stream.sh -r <file>
+    zfs_send_stream -r <file>
 
 It reads in the properties file I told you about in the `-n` option,
 and applies them to the received datasets.
