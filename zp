@@ -36,14 +36,14 @@ class ZfsPromote
 
   def promote_file(file)
     file = Pathname.new(file).realpath
-    raise NotInSnapshot unless snapshot?(file)
-
-    puts "restoring #{file.basename} to #{target_file}"
-    FileUtils.cp_r(file, target_file)
+    raise NotInSnapshot unless snapshot?(file.dirname)
+    target = target_file(file)
+    puts "restoring #{file.basename} to #{target}"
+    FileUtils.cp_r(file, target)
   rescue Errno::ENOENT
     handle_error("#{file} does not exist")
   rescue NotInSnapshot
-    handle_error("#{file} is not a snapshot")
+    handle_error("#{file.dirname} is not a snapshot")
   rescue RuntimeError => e
     handle_error(e.message)
   end
