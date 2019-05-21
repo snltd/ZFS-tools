@@ -7,7 +7,12 @@ recursive snapshot sending) is now built into the real ZFS tooling.
 ## zr
 
 Provides a nice way of recovering or reverting individual files from
-snapshots.
+snapshots. Use this from the live filesystem.
+
+## zp
+
+Complementrary to `zr`, promotes files out of a snapshot. Use this
+from inside a snapshot directory.
 
 ## zfs_snapshot
 
@@ -131,3 +136,13 @@ Restore mode is run *on the receiving host* like this:
 It reads in the properties file I told you about in the `-n` option,
 and applies them to the received datasets.
 
+
+## find_rogue_snapshots
+
+I have a snapshot naming scheme. This script finds snapshots which
+do not fit that scheme. Won't be useful to anyone else.
+
+## fix_zpool_caches
+
+A quick fix for a dodgy computer I used to have. Won't be useful to
+anyone.

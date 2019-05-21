@@ -1,0 +1,56 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Promote files from a ZFS snapshot to the live filesystem.
+#
+require 'pathname'
+require 'fileutils'
+
+abort 'usage: zp <file>...' if ARGV.empty?
+
+abort 'Unsupported platform.' unless File::SEPARATOR == '/'
+
+class NotInSnapshot < RuntimeError; end
+
+# A pointless comment to satisfy Rubocop
+#
+class ZfsPromote
+  attr_reader :errors
+
+  def initialize
+    @errors = 0
+  end
+
+  def snapshot?(file)
+    file.dirname.to_s.include?(File.join('', '.zfs', 'snapshot', ''))
+  end
+
+  def target_file(file)
+    file.dirname.sub(%r{.zfs/snapshot/[^/]*/}, '')
+  end
+
+  def handle_error(message)
+    @errors += 1
+    puts "ERROR: #{message}. Skipping."
+  end
+
+  def promote_file(file)
+    file = Pathname.new(file).realpath
+    raise NotInSnapshot unless snapshot?(file)
+
+    puts "restoring #{file.basename} to #{target_file}"
+    FileUtils.cp_r(file, target_file)
+  rescue Errno::ENOENT
+    handle_error("#{file} does not exist")
+  rescue NotInSnapshot
+    handle_error("#{file} is not a snapshot")
+  rescue RuntimeError => e
+    handle_error(e.message)
+  end
+end
+
+ZP = ZfsPromote.new
+
+ARGV.each { |f| ZP.promote_file(f) }
+
+exit ZP.errors
