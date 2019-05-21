@@ -1,4 +1,5 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 
 # Given a file as its only argument, finds files of that name in ZFS
 # snapshots, shows them to you, and lets you restore by selection.
@@ -30,30 +31,234 @@ class String
   end
 end
 
-def dataset_root(ref)
-  ref.mountpoint? ? ref : dataset_root(ref.parent)
+# Methods to get and process user input
+#
+class UserCommand
+  attr_reader :candidate_list, :file
+
+  def initialize(candidate_list, file)
+    @candidate_list = candidate_list
+    @file = file
+  end
+
+  def vals
+    select_file
+  end
+
+  def select_file
+    return auto_selection if defined?(AUTO)
+
+    CandidatePrinter.new(candidate_list, file).print!
+    user_selection
+  end
+
+  def user_selection
+    selection = ask_for_selection
+    validate_selection(selection)
+  end
+
+  # @return [String] command input by user
+  #
+  def ask_for_selection
+    print "choose file to promote [add 'd' for diff, 'k' to keep] > "
+    STDIN.gets.chomp
+  rescue NoMethodError # probably ctrl-d
+    puts
+    raise
+  end
+
+  def validate_selection(selection)
+    raise if selection.empty?
+
+    selection =~ /^(\d+)([a-z]?)$/
+    selection = Regexp.last_match(1)
+    cmd = Regexp.last_match(2)
+
+    raise 'Invalid selection.' unless selection.to_i.to_s == selection
+
+    src = candidate_list[selection.to_i]
+
+    raise 'Selection not found.' if src.nil?
+
+    [src, cmd]
+  end
+
+  # @return [Array[src, command]]
+  def auto_selection
+    [candidate_list.first, '']
+  end
 end
 
-def msg(str)
-  puts str if defined?(VERBOSE)
+# Methods to find and manipulate files
+#
+class ZfsRestore
+  attr_reader :dir, :file, :ds_root, :snapdir, :candidate_list
+
+  def initialize(file)
+    setup_paths(Pathname.new(file))
+  end
+
+  def restore!
+    @candidate_list = candidates.sort_by { |c| c.last.mtime }.reverse
+    candidates?
+
+    handle_command(*UserCommand.new(candidate_list, file).vals)
+  end
+
+  def handle_command(src, cmd)
+    if cmd.empty? || cmd == 'k'
+      backup_old_file if cmd == 'k'
+      restore_file(src)
+    elsif cmd == 'd'
+      diff_files(src.last, file)
+    else
+      raise 'unknown command'
+    end
+  end
+
+  def candidates?
+    return unless candidate_list.empty?
+
+    puts format('No snapshots of file. (Tried %<num>d snapshots.)',
+                num: snapdir.children.size)
+    raise
+  end
+
+  def backup_old_file
+    file.rename(file.dirname + (file.basename.to_s + '.orig'))
+  end
+
+  def restore_file(src)
+    puts "promoting #{src.last}"
+
+    # Linux tries to be "clever" and thinks the snapshot file *is*
+    # the target file. So we force an unlink.
+
+    file.unlink if file.exist?
+    FileUtils.cp_r(src.last, file, preserve: true)
+  end
+
+  private
+
+  def setup_paths(file)
+    # The file might not exist outside of a snapshot (because you
+    # just unlinked it). Let's assume if the *parent directory*
+    # doesn't exist, that's user error. Running Pathname#realpath
+    # on something that doesn't exist throws an ENOENT.
+    @dir = file.dirname.realpath
+    @file = dir + file.basename
+    @ds_root = dataset_root(file).realpath
+    @snapdir = snapshot_dir(ds_root)
+    raise "No snapshot dir. [#{snapdir}]." unless snapdir.exist?
+  rescue Errno::ENOENT
+    raise 'Parent directory of file was not found.'
+  end
+
+  # @param ds_root [Pathname] dataset root
+  # @return [Pathname] root of ZFS snapshot directories
+  #
+  def snapshot_dir(ds_root)
+    ds_root + '.zfs' + 'snapshot'
+  end
+
+  # @param ref [Pathname] file
+  # @return [Pathname] where the dataset containing @ref is mounted
+  #
+  def dataset_root(ref)
+    ref.mountpoint? ? ref : dataset_root(ref.parent)
+  end
+
+  def msg(str)
+    puts str if defined?(VERBOSE)
+  end
+
+  def candidates
+    snapdir.children.each_with_object([]) do |snap, a|
+      cand = candidate(snap, file)
+      msg "looking for #{cand}"
+      a.<< [snap.basename.to_s, cand] if cand.exist?
+    end
+  end
+
+  def candidate(snap, file)
+    snap + file.sub(ds_root.to_s + '/', '').to_s
+  end
+
+  def diff_files(file_a, file_b)
+    system("diff #{file_a} #{file_b}")
+  end
 end
 
-def usage_str
-  "usage: #{Pathname.new(__FILE__).basename} [options] <file>..."
+# Print out a decorated list of candidate files
+#
+class CandidatePrinter
+  attr_reader :candidate_list, :file, :identical
+
+  def initialize(candidate_list, file)
+    @candidate_list = candidate_list
+    @file = file
+    @identical = 0
+  end
+
+  def print_header
+    puts format('   %-20<current>s %-35<mtime>s %<size>s',
+                current: 'current file',
+                mtime: file.safe_mtime,
+                size: file.safe_size).bold
+    78.times { print '-' }
+    puts
+  end
+
+  def basic_line(file, index)
+    format('%2<index>d %-20<snap_name>s %-35<mtime>s %<size>s',
+           index: index,
+           snap_name: file.first,
+           mtime: file.last.safe_mtime,
+           size: file.last.safe_size)
+  end
+
+  def identical?(cand, file)
+    cand.last.size == file.safe_size && cand.last.mtime == file.safe_mtime
+  end
+
+  def decorated_line(cand, index)
+    str = basic_line(cand, index)
+
+    if identical?(cand, file)
+      @identical += 1
+      str.strike
+    elsif cand.last.size == file.safe_size
+      str
+    else
+      str.blue
+    end
+  end
+
+  def print!
+    candidate_list.each_with_index { |c, i| puts decorated_line(c, i) }
+
+    raise 'Only identical files found.' if identical == candidate_list.size
+  end
 end
 
 # Safe ways of examining a file which may not exist
 #
-def mtime(file)
-  file.mtime
-rescue Errno::ENOENT
-  'unknown mtime'
+class Pathname
+  def safe_mtime
+    mtime
+  rescue Errno::ENOENT
+    'unknown mtime'
+  end
+
+  def safe_size
+    size
+  rescue Errno::ENOENT
+    'unknown size'
+  end
 end
 
-def size(file)
-  file.size
-rescue Errno::ENOENT
-  'unknown size'
+def usage_str
+  "usage: #{Pathname.new(__FILE__).basename} [options] <file>..."
 end
 
 trap('INT') do
@@ -63,129 +268,24 @@ end
 
 OptionParser.new do |o|
   o.banner = usage_str
-
   o.on('-a', '--auto', 'automatically recover the newest backup') do
     AUTO = true
   end
-
   o.on('-v', '--verbose', 'be verbose') { VERBOSE = true }
   o.on('-h', '--help', 'show this information') { abort o.to_s }
 end.parse!
 
 abort usage_str if ARGV.empty?
 
+errors = 0
+
 ARGV.each do |file|
-  file = Pathname.new(file)
-
-  # The file might not exist outside of a snapshot (because you just
-  # unlinked it). Let's assume if the *parent directory* doesn't
-  # exist, that's user error. Running Pathname#realpath on something
-  # that doesn't exist throws an ENOENT.
-  #
   begin
-    dir = file.dirname.realpath
-    file = dir + file.basename
-  rescue Errno::ENOENT
-    puts 'Parent directory of file was not found.'
-    next
-  end
-
-  dataset_root = dataset_root(file)
-  snapdir = dataset_root + '.zfs' + 'snapshot'
-
-  unless snapdir.exist?
-    puts "No snapshot dir. [#{snapdir}]."
-    next
-  end
-
-  candidates = snapdir.children.each_with_object([]) do |snap, a|
-    c = snap + file.sub(dataset_root.to_s + '/', '').to_s
-    msg "looking for #{c}"
-    a.<< [snap.basename.to_s, c] if c.exist?
-  end
-
-  if candidates.empty?
-    puts format('No snapshots of file. (Tried %<num>d snapshots.)',
-                 num: snapdir.children.size)
-    next
-  end
-
-  puts format('   %-20<current>s %-35<mtime>s %<size>s',
-              current: 'current file',
-              mtime: mtime(file),
-              size: size(file)).bold
-  78.times { print '-' }
-  puts
-
-  candidates.sort_by! { |c| c.last.mtime }.reverse!
-
-  identical = 0
-
-  candidates.each_with_index do |c, i|
-    str = format('%2<index>d %-20<snap_name>s %-35<mtime>s %<size>s',
-                 index: i,
-                 snap_name: c.first,
-                 mtime: c.last.mtime,
-                 size: c.last.size)
-
-    puts(if c.last.size == size(file) && c.last.mtime == mtime(file)
-           identical += 1
-           str.strike
-         elsif c.last.size == size(file)
-           str
-         else
-           str.blue
-         end)
-  end
-
-  if identical == candidates.size
-    puts 'Only identical files found.'
-    next
-  end
-
-  if defined?(AUTO)
-    src = candidates.first
-    cmd = ''
-  else
-    print "choose file to promote [add 'd' for diff, 'k' to keep] > "
-
-    begin
-      selection = STDIN.gets.chomp
-    rescue NoMethodError # probably ctrl-d
-      puts
-      next
-    end
-
-    next if selection.empty?
-
-    selection =~ /^(\d+)([a-z]?)$/
-    selection = Regexp.last_match(1)
-    cmd = Regexp.last_match(2)
-
-    unless selection.to_i.to_s == selection
-      puts 'Invalid selection.'
-      next
-    end
-
-    src = candidates[selection.to_i]
-
-    if src.nil?
-      puts 'Selection not found.'
-      next
-    end
-  end
-
-  if cmd.empty? || cmd == 'k'
-    puts "promoting #{src.last}"
-
-    file.rename(file.dirname + (file.basename.to_s + '.orig')) if cmd == 'k'
-
-    # Linux tries to be "clever" and thinks the snapshot file *is* the target
-    # file. So we force an unlink.
-
-    file.unlink if file.exist?
-    FileUtils.cp_r(src.last, file, preserve: true)
-  elsif cmd == 'd'
-    system("diff #{src.last} #{file}")
+    ZfsRestore.new(file).restore!
+  rescue RuntimeError => e
+    errors += 1
+    puts e.message
   end
 end
+
+exit errors
