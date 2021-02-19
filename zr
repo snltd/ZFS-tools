@@ -1,16 +1,16 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Given a file as its only argument, finds files of that name in ZFS
-# snapshots, shows them to you, and lets you restore by selection.
-# Or, given the '-a' flag, automatically restores the most recently
-# modified with no interaction.
+# Given one or more files as arguments, finds files of the same name
+# in ZFS snapshots, shows them to you, and lets you restore by
+# selection.  Or, given the '-a' flag, automatically restores the
+# most recently modified with no interaction. (Be careful!)
 # Selecting a number (1) copies the snapshot file over the existing one.
-# Selecting a number and 'k' (1k) renames the existing file
-# '<file>.orig' and copies the snapshot file in
+# Selecting a number and 'k' (1k) keeps the existing file, renaming
+#   it '<file>.orig' copying the snapshot file in.
 # Selecting a number and 'd' (1d) shows a diff of the two files,
-# with the snapshot file being < the first <
-
+#   with the snapshot file being first.
+#
 require 'pathname'
 require 'fileutils'
 require 'optparse'
@@ -131,14 +131,24 @@ class ZfsRestore
   def restore_file(src)
     puts "promoting #{src.last}"
 
-    # Linux tries to be "clever" and thinks the snapshot file *is*
-    # the target file. So we force an unlink.
-
-    file.unlink if file.exist?
+    unlink_file
     FileUtils.cp_r(src.last, file, preserve: true)
   end
 
   private
+
+  def unlink_file
+    return unless file.exist?
+
+    # Linux tries to be "clever" and thinks the snapshot file *is*
+    # the target file. So we force an unlink.
+
+    if file.directory?
+      FileUtils.rm_r(file)
+    else
+      file.unlink
+    end
+  end
 
   def setup_paths(file)
     # The file might not exist outside of a snapshot (because you
