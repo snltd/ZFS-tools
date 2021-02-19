@@ -11,8 +11,12 @@ snapshots. Use this from the live filesystem.
 
 ## zp
 
-Complementrary to `zr`, promotes files out of a snapshot. Use this
+Complementary to `zr`, promotes files out of a snapshot. Use this
 from inside a snapshot directory.
+
+## zfs_scrub_telemetry
+Wraps a `zfs scrub`, sending telemetry about it to
+[Wavefront](https://wavefront.com).
 
 ## zfs_snapshot
 
@@ -95,7 +99,6 @@ you want to filter, `grep` is your friend.
 I've found this script useful when I need to clear some space, and
 some deeply buried snapshot somewhere is hogging a stack of room.
 
-
 ## zfs_scrub
 
 This is a wrapper to `zfs scrub`, which I used to run monthly from
@@ -135,7 +138,6 @@ Restore mode is run *on the receiving host* like this:
 
 It reads in the properties file I told you about in the `-n` option,
 and applies them to the received datasets.
-
 
 ## find_rogue_snapshots
 

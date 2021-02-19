@@ -1,0 +1,123 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Scrub a ZFS filesystem, wrapping it in a suitably defined Wavefront event,
+# and sending telemetry about the scrub via the following metrics.
+#
+# zfs.scrub.exit_code - exit code of the `zfs scrub...` command
+# zfs.scrub.progress  - %age progress of the scrub
+# zfs.scrub.errors    - number of errors not repaired by the scrub
+# zfs.scrub.repairs   - number of repairs made by the scrub
+# zfs.scrub.duration  - duration of a completed scrub, in seonds
+#
+# CAVEATS
+# Runs in the foreground, so you may get a seriously long-running process on a
+# big pool.
+# If a scrub is stopped, by `zpool scrub -s` or a system restart, the script
+# is not smart enough to realise, and the event will be left open.
+
+require 'socket'
+require 'wavefront-sdk/credentials'
+require 'wavefront-sdk/write'
+require 'wavefront-sdk/event'
+
+ZPOOL = '/usr/sbin/zpool'
+METRIC_PATH = 'zfs.scrub'
+WF_EVENT = Wavefront::Event.new(Wavefront::Credentials.new.creds)
+WF_WRITE = Wavefront::Write.new(proxy: 'wavefront.localnet')
+
+class ScrubWrapper
+  def initialize(pool)
+    @pool = pool
+  end
+
+  def start_notification(value)
+    WF_WRITE.write(point('exit_code', value))
+  end
+
+  def track_scrub
+    open_event
+
+    loop do
+      update_status
+      send_progress_metrics
+      break if @info.include?('repaired')
+
+      sleep 10
+    end
+
+    send_summary_metrics
+  ensure
+    wrapper.close_event
+  end
+
+  private
+
+  def open_event
+    resp = WF_EVENT.create(
+      { name: "zfs_scrub_#{Socket.gethostname}_#{@pool}",
+        annotations: {
+          severity: 'info',
+          type: 'maintenence',
+          details: "scheduled scrub of '#{Socket.gethostname}/#{@pool}' zpool"
+        },
+        tags: %w[zfs scrub maintenence] }
+    )
+
+    @event_id = resp.ok? ? resp.response.id : nil
+  end
+
+  def close_event
+    WF_EVENT.close(@event_id) unless @event_id.nil?
+  end
+
+  def update_status
+    raw = `#{ZPOOL} status #{@pool}`.lines
+    @info = raw.select { |l| l.match?(/scan:/) }.first
+    @progress = raw.select { |l| l.match?(/% done/) }.first
+  end
+
+  def send_summary_metrics
+    matches = @info.match(
+      /repaired (?<rep>\d+) in (?<dur>.*) with (?<err>\d+) errors on (?<end>.*)$/
+    )
+
+    ts = DateTime.strptime(matches[:end], '%a %b %e %T %Y').to_time.to_i
+
+    WF_WRITE.write([point('errors', matches[:err].to_i, ts),
+                    point('repairs', matches[:rep].to_i, ts),
+                    point('duration', int_duration(matches[:dur]), ts)])
+  end
+
+  def send_progress_metrics
+    return WF_WRITE.write(point('progress', 100)) if @progress.nil?
+
+    matches = @progress.match(/repaired, (?<pc>.*)%/)
+    WF_WRITE.write(point('progress', matches[:pc].to_f))
+  end
+
+  def point(path, value, timestamp = Time.now.to_i)
+    { path: [METRIC_PATH, path].join('.'),
+      value: value,
+      ts: timestamp,
+      tags: { pool: @pool } }
+  end
+
+  def int_duration(str)
+    days, hms = str.split(' days ')
+    h, m, s = hms.split(':').map(&:to_i)
+    days.to_i * 86_400 + h * 3600 + m * 60 + s
+  end
+end
+
+abort 'usage: zscrub <pool>' unless ARGV.size == 1
+
+pool = ARGV.first
+wrapper = ScrubWrapper.new(pool)
+scrub = system("#{ZPOOL} scrub #{pool}")
+
+wrapper.start_notification(scrub ? 0 : 1)
+
+abort "Failed to run scrub an #{pool}." unless scrub
+
+wrapper.track_scrub
