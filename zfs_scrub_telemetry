@@ -26,6 +26,8 @@ METRIC_PATH = 'zfs.scrub'
 WF_EVENT = Wavefront::Event.new(Wavefront::Credentials.new.creds)
 WF_WRITE = Wavefront::Write.new(proxy: 'wavefront.localnet')
 
+# Pointless comment for Rubocop
+#
 class ScrubWrapper
   def initialize(pool)
     @pool = pool

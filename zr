@@ -61,7 +61,7 @@ class UserCommand
   #
   def ask_for_selection
     print "choose file to promote [add 'd' for diff, 'k' to keep] > "
-    STDIN.gets.chomp
+    $stdin.gets.chomp
   rescue NoMethodError # probably ctrl-d
     puts
     raise
