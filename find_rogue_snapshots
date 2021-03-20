@@ -1,4 +1,5 @@
 #!/usr/bin/env ruby
+# frozen_string_literal: true
 
 # Find snapshots which don't match an expected naming scheme
 #
@@ -13,5 +14,6 @@ expected = %w[monday tuesday wednesday thursday friday saturday
   next if snap =~ /[012]\d:[0-5]0$/
   next if dataset.start_with?('rpool/VARSHARE/zones')
   next if dataset.start_with?('rpool/ROOT')
+
   puts snap
 end

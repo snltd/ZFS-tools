@@ -1,13 +1,14 @@
 #!/usr/bin/ksh
 #
-# I have a machine with a flaky old motherboard which keeps
-# temporarily losing devices and confusing ZFS. The most common
-# manifestation of this is that my SSD cache  and log and devices
-# keep going UNAVAIL. This script restores them, or moves them to a
-# new device.
-# Set NEWDEV to move the cached to a different device. The script
-# does not do any partitioning for you.
+# I have a machine with a flaky old motherboard which keeps temporarily losing
+# devices and confusing ZFS. The most common manifestation of this is that my
+# SSD cache  and log and devices keep going UNAVAIL. This script restores
+# them, or moves them to a new device.
+
+# Set NEWDEV to move the cached to a different device. The script does not do
+# any partitioning for you.
 #
+PATH=/bin:/usr/sbin
 NEWDEV="c6d0"
 
 if [[ $(id -u) != 0 ]]

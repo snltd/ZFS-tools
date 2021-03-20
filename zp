@@ -37,6 +37,7 @@ class ZfsPromote
   def promote_file(file)
     file = Pathname.new(file).realpath
     raise NotInSnapshot unless snapshot?(file.dirname)
+
     target = target_file(file)
     puts "restoring #{file.basename} to #{target}"
     FileUtils.cp_r(file, target)
