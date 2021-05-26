@@ -22,11 +22,12 @@ class ZfsPromote
   end
 
   def snapshot?(file)
-    file.dirname.to_s.include?(File.join('', '.zfs', 'snapshot', ''))
+    file.dirname.to_s.include?(File.join('', '.zfs', 'snapshot', '')) ||
+      file.dirname.to_s.end_with?(File.join('', '.zfs', 'snapshot'))
   end
 
   def target_file(file)
-    file.dirname.sub(%r{.zfs/snapshot/[^/]*/}, '')
+    file.dirname.sub(%r{.zfs/snapshot/[^/]*}, '')
   end
 
   def handle_error(message)
