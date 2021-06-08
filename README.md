@@ -14,6 +14,10 @@ snapshots. Use this from the live filesystem.
 Complementary to `zr`, promotes files out of a snapshot. Use this
 from inside a snapshot directory.
 
+## zls
+
+Lists the snapshots which contain the given file.
+
 ## zfs_scrub_telemetry
 Wraps a `zfs scrub`, sending telemetry about it to
 [Wavefront](https://wavefront.com).

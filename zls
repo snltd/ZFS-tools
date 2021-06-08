@@ -1,0 +1,66 @@
+#!/usr/bin/env ruby
+
+# Lists ZFS snapshots which contain the given file. If no argument is given,
+# file is taken to be the current working directory.
+# Default output lists the snapshot names, sorted aphanumerically
+# -f lists the full path to the snapshot directories
+# -l shows how much space the snapshot uses, and when it was created, but only
+# if you're on the machine which hosts the dataset. It can be combined with
+# -f, and it sorts by creation time
+
+require 'date'
+require 'pathname'
+require 'optparse'
+
+def dataset_root(ref)
+  ref.mountpoint? ? ref : dataset_root(ref.parent)
+end
+
+# @return [string] the filesystem said file is on
+def filesystem(file)
+  `/bin/df -k #{file}`.lines.last.split.first
+end
+
+def details(dataset, snapname)
+  raw = `/usr/sbin/zfs get -Hovalue creation,used #{dataset}@#{snapname} 2>/dev/null`
+  date, size = raw.split("\n")
+  { name: snapname, size: size, ts: DateTime.parse(date) }
+rescue TypeError
+  abort 'Dataset does not exist on this machine.'
+end
+
+opts = { full: false, long: false, age: false }
+
+OptionParser.new do |o|
+  o.on('-f', '--full', 'show full paths') { full = true }
+  o.on('-a', '--age', 'used with -l, shows snapshot age') { age = true }
+  o.on('-l', '--long', 'show snapshot details') { long = true }
+  o.on('-h', '--help', 'show this information') { abort o.to_s }
+end.parse!(into: opts)
+
+abort 'usage: zls [-fhl] [path]' if ARGV.size > 1
+
+path = ARGV.empty? ? Pathname.pwd : Pathname.new(ARGV.first)
+
+abort "File not found. [#{path}]" unless path.exist?
+
+snapdir = dataset_root(path) + '.zfs' + 'snapshot'
+
+abort 'Cannot find snapshots.' unless snapdir.exist?
+
+if opts[:long]
+  dataset = filesystem(path)
+
+  snap_details = snapdir.children.map do |snap|
+    details(dataset, snap.basename.to_s)
+  end
+
+  snap_details.sort_by { |d| d[:ts] }.each do |d|
+    d[:name] = "#{dataset}@#{d[:name]}" if opts[:full]
+    d[:ts] = ((Time.now - d[:ts].to_time) / 86400).round.to_s + 'd' if opts[:age]
+
+    puts format("%-40<name>s %-10<size>s %<ts>s", d)
+  end
+else
+  puts snapdir.children.sort.map { |s| opts[:full] ? s : s.basename }
+end
