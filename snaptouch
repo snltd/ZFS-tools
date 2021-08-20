@@ -1,0 +1,33 @@
+#!/bin/ksh
+
+# Get timestamps from an old snapshot and apply them to live files
+# of the same name
+
+if (( $# != 3 ))
+then
+	print -u2 "usage: ${0##*/} <dir> <snap> <days>"
+	exit 1
+fi
+
+DIR=$1
+SNAP=$2
+SINCE=$3
+ROOT=$(df -h $DIR | sed -n '$s/^.* //p')
+SNAPDIR="${ROOT}/.zfs/snapshot/${SNAP}"
+
+print "touching from $SNAP"
+
+if ! test -d $SNAPDIR
+then
+    print -u2 "ERROR: '${SNAPDIR}' not found."
+    exit 1
+fi
+
+find $DIR -mtime -$SINCE -a ! -name .\* -a -type f | while read f
+do
+	srcfile=$(print $f | sed "s|${ROOT}|${SNAPDIR}|")
+    test -s $srcfile || continue
+
+	print "touching $f"
+	touch -r "$srcfile" "$f"
+done
