@@ -1,0 +1,21 @@
+---
+
+AllCops:
+  TargetRubyVersion: 2.7
+  NewCops: enable
+
+require:
+  - rubocop-rake
+  - rubocop-minitest
+  - rubocop-performance
+
+Layout/LineLength:
+  Max: 80
+Metrics/ClassLength:
+  Max: 150
+Style/StringConcatenation:
+  Enabled: false
+Style/OptionalBooleanParameter:
+  Enabled: false
+Style/LineEndConcatenation:
+  Enabled: false
