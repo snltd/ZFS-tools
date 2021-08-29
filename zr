@@ -3,13 +3,15 @@
 
 # Given one or more files as arguments, finds files of the same name
 # in ZFS snapshots, shows them to you, and lets you restore by
-# selection.  Or, given the '-a' flag, automatically restores the
-# most recently modified with no interaction. (Be careful!)
+# selection.
 # Selecting a number (1) copies the snapshot file over the existing one.
 # Selecting a number and 'k' (1k) keeps the existing file, renaming
 #   it '<file>.orig' copying the snapshot file in.
 # Selecting a number and 'd' (1d) shows a diff of the two files,
 #   with the snapshot file being first.
+# You can do automatic promotion too. The '-a' flag, automatically restores
+# the most recently modified file with no interaction. (Be careful!) The '-s'
+# option lets you specify an snapshot from which to promote the given file(s).
 #
 require 'pathname'
 require 'fileutils'
@@ -34,22 +36,29 @@ end
 # Methods to get and process user input
 #
 class UserCommand
-  attr_reader :candidate_list, :file
+  attr_reader :candidate_list, :file, :opts
 
-  def initialize(candidate_list, file)
+  def initialize(candidate_list, file, opts = {})
     @candidate_list = candidate_list
     @file = file
-  end
-
-  def vals
-    select_file
+    @opts = opts
   end
 
   def select_file
-    return auto_selection if defined?(AUTO)
+    return auto_selection if opts[:auto]
+
+    return specified_snapshot if opts[:snap]
 
     CandidatePrinter.new(candidate_list, file).print!
     user_selection
+  end
+
+  def specified_snapshot
+    snapshot = candidate_list.select { |n, _p| n == opts[:snap] }
+
+    raise 'Snapshot not found' if snapshot.empty?
+
+    [snapshot.last, '']
   end
 
   def user_selection
@@ -92,9 +101,10 @@ end
 # Methods to find and manipulate files
 #
 class ZfsRestore
-  attr_reader :dir, :file, :ds_root, :snapdir, :candidate_list
+  attr_reader :dir, :file, :ds_root, :snapdir, :candidate_list, :opts
 
-  def initialize(file)
+  def initialize(file, opts = {})
+    @opts = opts
     setup_paths(Pathname.new(file))
   end
 
@@ -102,7 +112,7 @@ class ZfsRestore
     @candidate_list = candidates.sort_by { |c| c.last.mtime }.reverse
     candidates?
 
-    handle_command(*UserCommand.new(candidate_list, file).vals)
+    handle_command(*UserCommand.new(candidate_list, file, opts).select_file)
   end
 
   def handle_command(src, cmd)
@@ -179,7 +189,7 @@ class ZfsRestore
   end
 
   def msg(str)
-    puts str if defined?(VERBOSE)
+    puts str if opts[:verbose]
   end
 
   def candidates
@@ -276,26 +286,28 @@ trap('INT') do
   exit 0
 end
 
+opts = { auto: false,
+         snap: nil,
+         verbose: false }
+
 OptionParser.new do |o|
   o.banner = usage_str
-  o.on('-a', '--auto', 'automatically recover the newest backup') do
-    AUTO = true
-  end
-  o.on('-v', '--verbose', 'be verbose') { VERBOSE = true }
+  o.on('-a', '--auto', 'automatically recover the newest backup')
+  o.on('-s', '--snap snapshot_name',
+       'automatically recover from the given snapshot')
+  o.on('-v', '--verbose', 'be verbose')
   o.on('-h', '--help', 'show this information') { abort o.to_s }
-end.parse!
+end.parse!(into: opts)
 
 abort usage_str if ARGV.empty?
 
 errors = 0
 
 ARGV.each do |file|
-  begin
-    ZfsRestore.new(file).restore!
-  rescue RuntimeError => e
-    errors += 1
-    puts e.message
-  end
+  ZfsRestore.new(file, opts).restore!
+rescue RuntimeError => e
+  errors += 1
+  puts e.message
 end
 
 exit errors
