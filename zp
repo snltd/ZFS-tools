@@ -48,6 +48,8 @@ class ZfsPromote
     handle_error("#{file.dirname} is not a snapshot")
   rescue RuntimeError => e
     handle_error(e.message)
+  rescue ArgumentError => e
+    handle_error(e.message)
   end
 end
 
