@@ -1,0 +1,74 @@
+#!/usr/bin/env ruby
+
+# Given a directory and an optional snapshot name, recursively align the 
+# timestamps of every file in the directory with those of the corresponding files 
+# in the snapshot. If no snapshot is given, it will use yesterday's, based on the 
+# assumption you have "monday", "tuesday" etc. Does not touch directories.
+
+require 'pathname'
+require 'date'
+require 'optparse'
+
+options = {
+  noop: false,
+  verbose: false,
+  snapname: nil
+}
+
+def dataset_root(ref)
+  ref.mountpoint? ? ref : dataset_root(ref.parent)
+end
+
+def snapshot_dir(ds_root)
+  ds_root.join('.zfs', 'snapshot')
+end
+
+def file_in_snap(file, ds_root, snap_dir)
+  snap_dir.join(file.sub("#{ds_root}/", ''))
+end
+
+def ref_mtime(file)
+  file.mtime
+rescue StandardError
+  nil
+end
+
+OptionParser.new do |o|
+  o.on('-v', '--verbose', 'be verbose')
+  o.on('-s',
+       '--snapname STRING',
+       'use specified snapshot name, rather than most recent')
+  o.on('-n', '--noop', 'do not touch files (implies -v)')
+end.parse!(into: options)
+
+options[:snapname] ||= Date.today.prev_day.strftime('%A').downcase
+
+abort "usage: #{File.basename($PROGRAM_NAME)} [options] <dir>..." if ARGV.empty?
+
+ARGV.each do |d|
+  dir = Pathname.new(d).realpath
+  ds_root = dataset_root(Pathname.new(dir))
+  snap_dir = snapshot_dir(ds_root).join(options[:snapname])
+
+  ref_root = file_in_snap(dir, ds_root, snap_dir)
+  abort "No source at '#{ref_root}'" unless ref_root.exist?
+
+  dir.glob('**/*').each do |file|
+    next if file.directory? || file.symlink?
+
+    mtime = file.mtime
+    ref_mtime = ref_mtime(file_in_snap(file, ds_root, snap_dir))
+
+    if ref_mtime.nil?
+      puts "no reference for #{file}" if options[:verbose]
+      next
+    end
+
+    if ref_mtime == mtime
+      puts "#{file}: no change" if options[:verbose]
+    else
+      puts "#{file}: #{mtime} => #{ref_mtime}"
+      file.utime(ref_mtime, ref_mtime) unless options[:noop]
+    end
+  end
+end
