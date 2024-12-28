@@ -4,6 +4,8 @@ Various tools which assist with day-to-day ZFS business. Most of
 these were written around 2007, and some of what they do (like
 recursive snapshot sending) is now built into the real ZFS tooling.
 
+** This repo has been replaced by [a rewrite](https://github.com/snltd/zfs-tools-rs).**
+
 ## zr
 
 Provides a nice way of recovering or reverting individual files from
